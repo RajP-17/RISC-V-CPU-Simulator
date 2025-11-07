@@ -118,7 +118,9 @@ void load_program_vadd(Memory& mem, const MemMap& map) {
     std::cerr << "VADD: jump_from=" << jump_from << " (PC=0x" << std::hex << (jump_from*4) << ") "
               << "jump_target=" << std::dec << jump_target << " (PC=0x" << std::hex << (jump_target*4) << ") "
               << "offset=" << std::dec << jump_offset << "\n";
-    program.push_back(encode_j_type(0x6F, 0, jump_offset)); // j .LBB0_1 (back to loop start)
+    u32 encoded_jal = encode_j_type(0x6F, 0, jump_offset);
+    std::cerr << "Encoded JAL: 0x" << std::hex << encoded_jal << std::dec << "\n";
+    program.push_back(encoded_jal); // j .LBB0_1 (back to loop start)
 
     // .LBB0_4: Epilogue
     u32 epilogue_start = program.size();

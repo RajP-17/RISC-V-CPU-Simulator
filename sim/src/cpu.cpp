@@ -112,14 +112,11 @@ void Cpu::stage_fetch() {
 
 void Cpu::stage_decode() {
     if (flush_decode_) {
-        if (stats_.retired < 0) {
-            std::cerr << "Decode: FLUSHED\n";
-        }
         decode_latch_.valid = false;
         return;
     }
 
-    if (!fetch_latch_.valid || stall_decode_) {
+    if (!fetch_latch_.valid || stall_decode_ || decode_latch_.valid) {
         if (stats_.retired < 0 && stall_decode_) {
             std::cerr << "Decode: STALLED\n";
         }
@@ -144,15 +141,6 @@ void Cpu::stage_decode() {
     f32 frs1_val = fregs_[d.rs1];
     f32 frs2_val = fregs_[d.rs2];
 
-    if (stats_.retired < 0) {
-        std::cerr << "Decode: PC=0x" << std::hex << fetch_latch_.pc
-                  << " opcode=0x" << static_cast<int>(d.opcode)
-                  << " rd=" << static_cast<int>(d.rd)
-                  << " rs1=" << static_cast<int>(d.rs1) << "(val=0x" << rs1_val << ")"
-                  << " rs2=" << static_cast<int>(d.rs2) << "(val=0x" << rs2_val << ")"
-                  << " imm=" << d.imm << std::dec << "\n";
-    }
-
     // Mark destination register as busy
     mark_busy(d);
 
@@ -170,6 +158,7 @@ void Cpu::stage_decode() {
 void Cpu::stage_execute() {
     // Handle ongoing execution
     if (execute_latch_.valid) {
+
         // Check if execute is still in progress
         if (execute_latch_.execute_countdown > 0) {
             execute_latch_.execute_countdown--;
@@ -293,6 +282,11 @@ void Cpu::stage_execute() {
         // Floating-point ALU
         case Decoded::Kind::FADD_S:
             fresult = isa::exec_fadd_s(decode_latch_.frs1_val, decode_latch_.frs2_val);
+            if (stats_.retired < 35) {
+                std::cerr << "  FADD.S: f" << static_cast<int>(d.rd) << " = f" << static_cast<int>(d.rs1)
+                          << "(" << decode_latch_.frs1_val << ") + f" << static_cast<int>(d.rs2)
+                          << "(" << decode_latch_.frs2_val << ") = " << fresult << "\n";
+            }
             countdown = timing::kFExecuteCycles - 1;
             break;
         case Decoded::Kind::FSUB_S:
@@ -316,6 +310,11 @@ void Cpu::stage_execute() {
                 std::cerr << "LW/FLW address error at PC=" << std::hex << decode_latch_.pc
                           << " rs1=" << static_cast<int>(d.rs1) << " rs1_val=" << decode_latch_.rs1_val
                           << " imm=" << d.imm << " addr=" << addr << std::dec << "\n";
+            }
+            if (stats_.retired < 60 && d.kind == Decoded::Kind::LW && (d.rd == 10 || d.rd == 11)) {
+                std::cerr << "[#" << stats_.retired << "] LW: x" << static_cast<int>(d.rd)
+                          << " = mem[" << std::hex << addr << std::dec << "] (s0=" << std::hex
+                          << decode_latch_.rs1_val << " + " << std::dec << d.imm << ")\n";
             }
             if (mem_.dport().can_issue()) {
                 MemReq req;
@@ -342,6 +341,10 @@ void Cpu::stage_execute() {
                 std::cerr << "SW address calculation error: rs1=" << std::hex << decode_latch_.rs1_val
                           << " imm=" << d.imm << " addr=" << addr << std::dec << "\n";
             }
+            if (stats_.retired < 60 && (d.rs2 == 10 || addr == 0x2F0)) {
+                std::cerr << "[#" << stats_.retired << "] SW: x" << static_cast<int>(d.rs2)
+                          << "(" << decode_latch_.rs2_val << ") -> mem[" << std::hex << addr << std::dec << "]\n";
+            }
             if (mem_.dport().can_issue()) {
                 MemReq req;
                 req.op = MemReq::Op::Write;
@@ -367,6 +370,11 @@ void Cpu::stage_execute() {
                 // Convert f32 to u32 for transmission
                 u32 wdata;
                 std::memcpy(&wdata, &decode_latch_.frs2_val, sizeof(u32));
+
+                if (stats_.retired < 60) {
+                    std::cerr << "[#" << stats_.retired << "] FSW: f" << static_cast<int>(d.rs2) << "(" << decode_latch_.frs2_val
+                              << ") -> mem[" << std::hex << addr << std::dec << "]\n";
+                }
 
                 MemReq req;
                 req.op = MemReq::Op::Write;
@@ -428,10 +436,6 @@ void Cpu::stage_execute() {
         case Decoded::Kind::JAL: {
             result = decode_latch_.pc + 4;  // Return address
             u32 target = isa::calc_jump_target(decode_latch_.pc, d.imm);
-            if (stats_.retired < 30) {
-                std::cerr << "JAL at PC=0x" << std::hex << decode_latch_.pc << " imm=" << std::dec << d.imm
-                          << " target=0x" << std::hex << target << std::dec << "\n";
-            }
             handle_branch(target);
             countdown = timing::kIExecuteCycles - 1;
             break;
@@ -485,8 +489,17 @@ void Cpu::stage_writeback() {
         }
     } else if (d.kind == Decoded::Kind::FLW) {
         std::memcpy(&fregs_[d.rd], &execute_latch_.result, sizeof(f32));
-    } else if (d.is_fp() && d.rd != 0) {
+        if (stats_.retired < 35) {
+            f32 loaded_val;
+            std::memcpy(&loaded_val, &execute_latch_.result, sizeof(f32));
+            std::cerr << "  FLW: f" << static_cast<int>(d.rd) << " = " << loaded_val << "\n";
+        }
+    } else if (d.is_fp() && d.kind != Decoded::Kind::FSW) {
+        // FP ALU operations write to FP registers (but not FSW which only reads)
         fregs_[d.rd] = execute_latch_.fresult;
+        if (stats_.retired < 35) {
+            std::cerr << "  FP: f" << static_cast<int>(d.rd) << " = " << execute_latch_.fresult << "\n";
+        }
     } else if (d.rd != 0 && !d.is_branch() && !d.is_memory()) {
         regs_[d.rd] = execute_latch_.result;
         if (stats_.retired < 0) {
@@ -515,7 +528,10 @@ void Cpu::stage_writeback() {
 bool Cpu::check_hazard(const Decoded& d) {
     // Check if source registers are busy
     if (d.rs1 != 0) {
-        if (d.is_fp()) {
+        // FLW and FSW use rs1 as integer base address register
+        if (d.kind == Decoded::Kind::FLW || d.kind == Decoded::Kind::FSW) {
+            if (int_busy_[d.rs1]) return true;
+        } else if (d.is_fp()) {
             if (fp_busy_[d.rs1]) return true;
         } else {
             if (int_busy_[d.rs1]) return true;
@@ -546,25 +562,39 @@ bool Cpu::check_hazard(const Decoded& d) {
 }
 
 void Cpu::mark_busy(const Decoded& d) {
-    if (d.rd == 0) return;
-
     // Stores and branches don't write to rd
     if (d.kind == Decoded::Kind::SW || d.kind == Decoded::Kind::FSW || d.is_branch()) {
         return;
     }
 
     if (d.is_fp()) {
+        // FP registers: f0 is a real register (not hardwired to zero)
         fp_busy_[d.rd] = true;
+        if (stats_.retired < 35) {
+            std::cerr << "  mark_busy: f" << static_cast<int>(d.rd) << "\n";
+        }
     } else {
+        // Integer registers: x0 is hardwired to zero, don't mark it busy
+        if (d.rd == 0) return;
         int_busy_[d.rd] = true;
     }
 }
 
 void Cpu::clear_busy(const Decoded& d) {
-    if (d.rd != 0) {
-        if (d.is_fp()) {
-            fp_busy_[d.rd] = false;
-        } else {
+    // Stores and branches don't write to registers
+    if (d.kind == Decoded::Kind::SW || d.kind == Decoded::Kind::FSW || d.is_branch()) {
+        return;
+    }
+
+    if (d.is_fp()) {
+        // FP registers: f0 is a real register
+        fp_busy_[d.rd] = false;
+        if (stats_.retired < 35) {
+            std::cerr << "  clear_busy: f" << static_cast<int>(d.rd) << "\n";
+        }
+    } else {
+        // Integer registers: x0 is hardwired to zero, don't clear it
+        if (d.rd != 0) {
             int_busy_[d.rd] = false;
         }
     }
