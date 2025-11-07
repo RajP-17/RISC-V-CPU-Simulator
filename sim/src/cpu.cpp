@@ -301,16 +301,6 @@ void Cpu::stage_execute() {
         case Decoded::Kind::LW:
         case Decoded::Kind::FLW: {
             u32 addr = static_cast<u32>(static_cast<i32>(decode_latch_.rs1_val) + d.imm);
-            if (addr >= 0xF0000000) {
-                std::cerr << "LW/FLW address error at PC=" << std::hex << decode_latch_.pc
-                          << " rs1=" << static_cast<int>(d.rs1) << " rs1_val=" << decode_latch_.rs1_val
-                          << " imm=" << d.imm << " addr=" << addr << std::dec << "\n";
-            }
-            if (stats_.retired < 60 && d.kind == Decoded::Kind::LW && (d.rd == 10 || d.rd == 11)) {
-                std::cerr << "[#" << stats_.retired << "] LW: x" << static_cast<int>(d.rd)
-                          << " = mem[" << std::hex << addr << std::dec << "] (s0=" << std::hex
-                          << decode_latch_.rs1_val << " + " << std::dec << d.imm << ")\n";
-            }
             if (mem_.dport().can_issue()) {
                 MemReq req;
                 req.op = MemReq::Op::Read;
@@ -332,14 +322,6 @@ void Cpu::stage_execute() {
 
         case Decoded::Kind::SW: {
             u32 addr = static_cast<u32>(static_cast<i32>(decode_latch_.rs1_val) + d.imm);
-            if (addr >= 0xF0000000) {
-                std::cerr << "SW address calculation error: rs1=" << std::hex << decode_latch_.rs1_val
-                          << " imm=" << d.imm << " addr=" << addr << std::dec << "\n";
-            }
-            if (stats_.retired < 60 && (d.rs2 == 10 || addr == 0x2F0)) {
-                std::cerr << "[#" << stats_.retired << "] SW: x" << static_cast<int>(d.rs2)
-                          << "(" << decode_latch_.rs2_val << ") -> mem[" << std::hex << addr << std::dec << "]\n";
-            }
             if (mem_.dport().can_issue()) {
                 MemReq req;
                 req.op = MemReq::Op::Write;
@@ -365,11 +347,6 @@ void Cpu::stage_execute() {
                 // Convert f32 to u32 for transmission
                 u32 wdata;
                 std::memcpy(&wdata, &decode_latch_.frs2_val, sizeof(u32));
-
-                if (stats_.retired < 60) {
-                    std::cerr << "[#" << stats_.retired << "] FSW: f" << static_cast<int>(d.rs2) << "(" << decode_latch_.frs2_val
-                              << ") -> mem[" << std::hex << addr << std::dec << "]\n";
-                }
 
                 MemReq req;
                 req.op = MemReq::Op::Write;
@@ -478,28 +455,14 @@ void Cpu::stage_writeback() {
     if (d.kind == Decoded::Kind::LW) {
         if (d.rd != 0) {
             regs_[d.rd] = execute_latch_.result;
-            if (stats_.retired < 0) {
-                std::cerr << "  Write: x" << static_cast<int>(d.rd) << " = 0x" << std::hex << execute_latch_.result << std::dec << "\n";
-            }
         }
     } else if (d.kind == Decoded::Kind::FLW) {
         std::memcpy(&fregs_[d.rd], &execute_latch_.result, sizeof(f32));
-        if (stats_.retired < 35) {
-            f32 loaded_val;
-            std::memcpy(&loaded_val, &execute_latch_.result, sizeof(f32));
-            std::cerr << "  FLW: f" << static_cast<int>(d.rd) << " = " << loaded_val << "\n";
-        }
     } else if (d.is_fp() && d.kind != Decoded::Kind::FSW) {
         // FP ALU operations write to FP registers (but not FSW which only reads)
         fregs_[d.rd] = execute_latch_.fresult;
-        if (stats_.retired < 35) {
-            std::cerr << "  FP: f" << static_cast<int>(d.rd) << " = " << execute_latch_.fresult << "\n";
-        }
     } else if (d.rd != 0 && !d.is_branch() && !d.is_memory()) {
         regs_[d.rd] = execute_latch_.result;
-        if (stats_.retired < 0) {
-            std::cerr << "  Write: x" << static_cast<int>(d.rd) << " = 0x" << std::hex << execute_latch_.result << std::dec << "\n";
-        }
     }
 
     // Clear busy flag
@@ -507,15 +470,6 @@ void Cpu::stage_writeback() {
 
     // Retire instruction
     stats_.retired++;
-
-    if (stats_.retired < 50) {
-        std::cerr << "Retired #" << stats_.retired << " at PC=" << std::hex << execute_latch_.pc;
-        if (execute_latch_.decoded.kind == Decoded::Kind::JAL || execute_latch_.decoded.kind == Decoded::Kind::BEQ ||
-            execute_latch_.decoded.kind == Decoded::Kind::BNE || execute_latch_.decoded.kind == Decoded::Kind::BLT) {
-            std::cerr << " (branch/jump to PC=" << next_pc_ << ")";
-        }
-        std::cerr << std::dec << "\n";
-    }
 
     execute_latch_.valid = false;
 }
@@ -565,9 +519,6 @@ void Cpu::mark_busy(const Decoded& d) {
     if (d.is_fp()) {
         // FP registers: f0 is a real register (not hardwired to zero)
         fp_busy_[d.rd] = true;
-        if (stats_.retired < 35) {
-            std::cerr << "  mark_busy: f" << static_cast<int>(d.rd) << "\n";
-        }
     } else {
         // Integer registers: x0 is hardwired to zero, don't mark it busy
         if (d.rd == 0) return;
@@ -584,9 +535,6 @@ void Cpu::clear_busy(const Decoded& d) {
     if (d.is_fp()) {
         // FP registers: f0 is a real register
         fp_busy_[d.rd] = false;
-        if (stats_.retired < 35) {
-            std::cerr << "  clear_busy: f" << static_cast<int>(d.rd) << "\n";
-        }
     } else {
         // Integer registers: x0 is hardwired to zero, don't clear it
         if (d.rd != 0) {

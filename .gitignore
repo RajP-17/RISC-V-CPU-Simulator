@@ -37,6 +37,8 @@ tests.exe
 *.pdb
 *.ilk
 
-/.gitignore
+gitignore
 Agent_Task_Spec_CPP.md
 CLAUDE.md
+ugo.txt
+ugo.txt
