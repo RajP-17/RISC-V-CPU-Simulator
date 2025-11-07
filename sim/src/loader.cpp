@@ -55,12 +55,8 @@ void load_program_vadd(Memory& mem, const MemMap& map) {
     program.push_back(encode_i_type(0x13, 8, 0x0, 2, 16));   // addi s0, sp, 16
 
     // Initialize i = 0
-    program.push_back(encode_i_type(0x13, 10, 0x0, 0, 0));   // mv a0, zero (a0 = i)
-    u32 sw1 = encode_s_type(0x23, 0x2, 8, 10, -12); // sw a0, -12(s0)
-    u32 sw2 = encode_s_type(0x23, 0x2, 8, 10, -16); // sw a0, -16(s0)
-    std::cout << "Debug: SW encoding: sw1=" << std::hex << sw1 << " sw2=" << sw2 << std::dec << "\n";
-    program.push_back(sw1);
-    program.push_back(sw2);
+    program.push_back(encode_i_type(0x13, 10, 0x0, 0, 0));   // addi a0, x0, 0
+    program.push_back(encode_s_type(0x23, 0x2, 8, 10, -16)); // sw a0, -16(s0) [i=0]
 
     // Loop start (j .LBB0_1)
     program.push_back(encode_j_type(0x6F, 0, 4));  // j .LBB0_1
@@ -72,26 +68,35 @@ void load_program_vadd(Memory& mem, const MemMap& map) {
     program.push_back(encode_j_type(0x6F, 0, 4));             // j .LBB0_2
 
     // .LBB0_2: Loop body
-    // Load A[i]
-    program.push_back(encode_u_type(0x37, 10, map.A_base & 0xFFFFF000)); // lui a0, %hi(A_base)
-    program.push_back(encode_i_type(0x13, 10, 0x0, 10, map.A_base & 0xFFF)); // addi a0, a0, %lo(A_base)
+    // Load A[i] - properly handle %hi/%lo split
+    u32 A_hi = map.A_base & 0xFFFFF000;
+    i32 A_lo = static_cast<i32>(map.A_base & 0xFFF);
+    if (A_lo & 0x800) A_hi += 0x1000;  // Adjust for sign extension
+    program.push_back(encode_u_type(0x37, 10, A_hi)); // lui a0, %hi(A_base)
+    program.push_back(encode_i_type(0x13, 10, 0x0, 10, A_lo)); // addi a0, a0, %lo(A_base)
     program.push_back(encode_i_type(0x03, 11, 0x2, 8, -16)); // lw a1, -16(s0) [i]
     program.push_back(encode_i_type(0x13, 11, 0x1, 11, 2)); // slli a1, a1, 2
     program.push_back(encode_r_type(0x33, 10, 0x0, 10, 11, 0x00)); // add a0, a0, a1
     program.push_back(encode_i_type(0x07, 0, 0x2, 10, 0)); // flw ft0, 0(a0)
 
-    // Load B[i]
-    program.push_back(encode_u_type(0x37, 10, map.B_base & 0xFFFFF000)); // lui a0, %hi(B_base)
-    program.push_back(encode_i_type(0x13, 10, 0x0, 10, map.B_base & 0xFFF)); // addi a0, a0, %lo(B_base)
+    // Load B[i] - properly handle %hi/%lo split
+    u32 B_hi = map.B_base & 0xFFFFF000;
+    i32 B_lo = static_cast<i32>(map.B_base & 0xFFF);
+    if (B_lo & 0x800) B_hi += 0x1000;  // Adjust for sign extension
+    program.push_back(encode_u_type(0x37, 10, B_hi)); // lui a0, %hi(B_base)
+    program.push_back(encode_i_type(0x13, 10, 0x0, 10, B_lo)); // addi a0, a0, %lo(B_base)
     program.push_back(encode_r_type(0x33, 10, 0x0, 10, 11, 0x00)); // add a0, a0, a1
     program.push_back(encode_i_type(0x07, 1, 0x2, 10, 0)); // flw ft1, 0(a0)
 
     // C[i] = A[i] + B[i]
     program.push_back(encode_r_type(0x53, 0, 0x0, 0, 1, 0x00)); // fadd.s ft0, ft0, ft1
 
-    // Store C[i]
-    program.push_back(encode_u_type(0x37, 10, map.C_base & 0xFFFFF000)); // lui a0, %hi(C_base)
-    program.push_back(encode_i_type(0x13, 10, 0x0, 10, map.C_base & 0xFFF)); // addi a0, a0, %lo(C_base)
+    // Store C[i] - properly handle %hi/%lo split
+    u32 C_hi = map.C_base & 0xFFFFF000;
+    i32 C_lo = static_cast<i32>(map.C_base & 0xFFF);
+    if (C_lo & 0x800) C_hi += 0x1000;  // Adjust for sign extension
+    program.push_back(encode_u_type(0x37, 10, C_hi)); // lui a0, %hi(C_base)
+    program.push_back(encode_i_type(0x13, 10, 0x0, 10, C_lo)); // addi a0, a0, %lo(C_base)
     program.push_back(encode_r_type(0x33, 10, 0x0, 10, 11, 0x00)); // add a0, a0, a1
     program.push_back(encode_s_type(0x27, 0x2, 10, 0, 0)); // fsw ft0, 0(a0)
 
@@ -139,23 +144,35 @@ void load_program_vsub(Memory& mem, const MemMap& map) {
     program.push_back(encode_j_type(0x6F, 0, 4));
 
     // Load A[i] and B[i], compute D[i] = A[i] - B[i]
-    program.push_back(encode_u_type(0x37, 10, map.A_base & 0xFFFFF000));
-    program.push_back(encode_i_type(0x13, 10, 0x0, 10, map.A_base & 0xFFF));
+    // Load A[i] - properly handle %hi/%lo split
+    u32 A_hi = map.A_base & 0xFFFFF000;
+    i32 A_lo = static_cast<i32>(map.A_base & 0xFFF);
+    if (A_lo & 0x800) A_hi += 0x1000;
+    program.push_back(encode_u_type(0x37, 10, A_hi));
+    program.push_back(encode_i_type(0x13, 10, 0x0, 10, A_lo));
     program.push_back(encode_i_type(0x03, 11, 0x2, 8, -16));
     program.push_back(encode_i_type(0x13, 11, 0x1, 11, 2));
     program.push_back(encode_r_type(0x33, 10, 0x0, 10, 11, 0x00));
     program.push_back(encode_i_type(0x07, 0, 0x2, 10, 0));
-    program.push_back(encode_u_type(0x37, 10, map.B_base & 0xFFFFF000));
-    program.push_back(encode_i_type(0x13, 10, 0x0, 10, map.B_base & 0xFFF));
+
+    // Load B[i] - properly handle %hi/%lo split
+    u32 B_hi = map.B_base & 0xFFFFF000;
+    i32 B_lo = static_cast<i32>(map.B_base & 0xFFF);
+    if (B_lo & 0x800) B_hi += 0x1000;
+    program.push_back(encode_u_type(0x37, 10, B_hi));
+    program.push_back(encode_i_type(0x13, 10, 0x0, 10, B_lo));
     program.push_back(encode_r_type(0x33, 10, 0x0, 10, 11, 0x00));
     program.push_back(encode_i_type(0x07, 1, 0x2, 10, 0));
 
     // FSUB instead of FADD
     program.push_back(encode_r_type(0x53, 0, 0x0, 0, 1, 0x04)); // fsub.s ft0, ft0, ft1
 
-    // Store D[i]
-    program.push_back(encode_u_type(0x37, 10, map.D_base & 0xFFFFF000));
-    program.push_back(encode_i_type(0x13, 10, 0x0, 10, map.D_base & 0xFFF));
+    // Store D[i] - properly handle %hi/%lo split
+    u32 D_hi = map.D_base & 0xFFFFF000;
+    i32 D_lo = static_cast<i32>(map.D_base & 0xFFF);
+    if (D_lo & 0x800) D_hi += 0x1000;
+    program.push_back(encode_u_type(0x37, 10, D_hi));
+    program.push_back(encode_i_type(0x13, 10, 0x0, 10, D_lo));
     program.push_back(encode_r_type(0x33, 10, 0x0, 10, 11, 0x00));
     program.push_back(encode_s_type(0x27, 0x2, 10, 0, 0));
     program.push_back(encode_j_type(0x6F, 0, 4));

@@ -61,6 +61,16 @@ int main(int argc, char** argv) {
     loader::init_arrays(mem, map, seed);
     loader::clear_results(mem, map);
 
+    // Debug: Print first 25 instructions in memory
+    std::cout << "\nFirst 25 encoded instructions in memory:\n";
+    for (int i = 0; i < 25; i++) {
+        u32 addr = map.inst_base + i * 4;
+        u32 instr = mem.read_u32(addr);
+        std::cout << "  [0x" << std::hex << std::setw(3) << std::setfill('0') << addr
+                  << "] = 0x" << std::setw(8) << instr << std::dec << "\n";
+    }
+    std::cout << "\n";
+
     // Create CPU
     Cpu cpu(mem, 0);
     cpu.reset(map.inst_base);

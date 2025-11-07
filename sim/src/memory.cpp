@@ -56,7 +56,10 @@ void DataRamPort::tick() {
 
 u32 DataRamPort::read_word(u32 addr) const {
     assert((addr & 0x3) == 0 && "Unaligned memory access!");
-    assert(addr + 3 < mem_.size() && "Memory access out of bounds!");
+    if (addr + 3 >= mem_.size()) {
+        std::cerr << "Memory read out of bounds! addr=" << std::hex << addr << " mem_size=" << mem_.size() << std::dec << "\n";
+        assert(false && "Memory access out of bounds!");
+    }
 
     u32 value;
     std::memcpy(&value, &mem_[addr], sizeof(u32));

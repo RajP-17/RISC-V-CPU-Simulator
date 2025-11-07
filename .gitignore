@@ -36,3 +36,7 @@ tests.exe
 *.dSYM/
 *.pdb
 *.ilk
+
+/.gitignore
+Agent_Task_Spec_CPP.md
+CLAUDE.md

@@ -83,6 +83,11 @@ void Cpu::stage_fetch() {
         return;
     }
 
+    // Don't fetch if previous instruction hasn't been consumed
+    if (fetch_latch_.valid) {
+        return;
+    }
+
     // Fetch instruction from memory
     u32 instr = mem_.ifetch(pc_);
 
@@ -97,17 +102,27 @@ void Cpu::stage_fetch() {
     fetch_latch_.pc = pc_;
     fetch_latch_.instruction = instr;
 
+    if (stats_.retired < 0) {
+        std::cerr << "Fetch: PC=0x" << std::hex << pc_ << " instr=0x" << instr << std::dec << "\n";
+    }
+
     // Update next PC (default: PC + 4)
     next_pc_ = pc_ + 4;
 }
 
 void Cpu::stage_decode() {
     if (flush_decode_) {
+        if (stats_.retired < 0) {
+            std::cerr << "Decode: FLUSHED\n";
+        }
         decode_latch_.valid = false;
         return;
     }
 
     if (!fetch_latch_.valid || stall_decode_) {
+        if (stats_.retired < 0 && stall_decode_) {
+            std::cerr << "Decode: STALLED\n";
+        }
         stall_decode_ = false;
         return;
     }
@@ -128,6 +143,15 @@ void Cpu::stage_decode() {
     u32 rs2_val = (d.rs2 == 0) ? 0 : regs_[d.rs2];
     f32 frs1_val = fregs_[d.rs1];
     f32 frs2_val = fregs_[d.rs2];
+
+    if (stats_.retired < 0) {
+        std::cerr << "Decode: PC=0x" << std::hex << fetch_latch_.pc
+                  << " opcode=0x" << static_cast<int>(d.opcode)
+                  << " rd=" << static_cast<int>(d.rd)
+                  << " rs1=" << static_cast<int>(d.rs1) << "(val=0x" << rs1_val << ")"
+                  << " rs2=" << static_cast<int>(d.rs2) << "(val=0x" << rs2_val << ")"
+                  << " imm=" << d.imm << std::dec << "\n";
+    }
 
     // Mark destination register as busy
     mark_busy(d);
@@ -288,6 +312,11 @@ void Cpu::stage_execute() {
         case Decoded::Kind::LW:
         case Decoded::Kind::FLW: {
             u32 addr = static_cast<u32>(static_cast<i32>(decode_latch_.rs1_val) + d.imm);
+            if (addr >= 0xF0000000) {
+                std::cerr << "LW/FLW address error at PC=" << std::hex << decode_latch_.pc
+                          << " rs1=" << static_cast<int>(d.rs1) << " rs1_val=" << decode_latch_.rs1_val
+                          << " imm=" << d.imm << " addr=" << addr << std::dec << "\n";
+            }
             if (mem_.dport().can_issue()) {
                 MemReq req;
                 req.op = MemReq::Op::Read;
@@ -444,6 +473,9 @@ void Cpu::stage_writeback() {
     if (d.kind == Decoded::Kind::LW) {
         if (d.rd != 0) {
             regs_[d.rd] = execute_latch_.result;
+            if (stats_.retired < 0) {
+                std::cerr << "  Write: x" << static_cast<int>(d.rd) << " = 0x" << std::hex << execute_latch_.result << std::dec << "\n";
+            }
         }
     } else if (d.kind == Decoded::Kind::FLW) {
         std::memcpy(&fregs_[d.rd], &execute_latch_.result, sizeof(f32));
@@ -451,6 +483,9 @@ void Cpu::stage_writeback() {
         fregs_[d.rd] = execute_latch_.fresult;
     } else if (d.rd != 0 && !d.is_branch() && !d.is_memory()) {
         regs_[d.rd] = execute_latch_.result;
+        if (stats_.retired < 0) {
+            std::cerr << "  Write: x" << static_cast<int>(d.rd) << " = 0x" << std::hex << execute_latch_.result << std::dec << "\n";
+        }
     }
 
     // Clear busy flag
@@ -458,6 +493,10 @@ void Cpu::stage_writeback() {
 
     // Retire instruction
     stats_.retired++;
+
+    if (stats_.retired < 50) {
+        std::cerr << "Retired #" << stats_.retired << " at PC=" << std::hex << execute_latch_.pc << std::dec << "\n";
+    }
 
     execute_latch_.valid = false;
 }
