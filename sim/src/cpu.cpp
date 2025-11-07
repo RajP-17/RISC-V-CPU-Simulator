@@ -287,7 +287,7 @@ void Cpu::stage_execute() {
         // Memory operations
         case Decoded::Kind::LW:
         case Decoded::Kind::FLW: {
-            u32 addr = decode_latch_.rs1_val + static_cast<u32>(d.imm);
+            u32 addr = static_cast<u32>(static_cast<i32>(decode_latch_.rs1_val) + d.imm);
             if (mem_.dport().can_issue()) {
                 MemReq req;
                 req.op = MemReq::Op::Read;
@@ -308,7 +308,11 @@ void Cpu::stage_execute() {
         }
 
         case Decoded::Kind::SW: {
-            u32 addr = decode_latch_.rs1_val + static_cast<u32>(d.imm);
+            u32 addr = static_cast<u32>(static_cast<i32>(decode_latch_.rs1_val) + d.imm);
+            if (addr >= 0xF0000000) {
+                std::cerr << "SW address calculation error: rs1=" << std::hex << decode_latch_.rs1_val
+                          << " imm=" << d.imm << " addr=" << addr << std::dec << "\n";
+            }
             if (mem_.dport().can_issue()) {
                 MemReq req;
                 req.op = MemReq::Op::Write;
@@ -329,7 +333,7 @@ void Cpu::stage_execute() {
         }
 
         case Decoded::Kind::FSW: {
-            u32 addr = decode_latch_.rs1_val + static_cast<u32>(d.imm);
+            u32 addr = static_cast<u32>(static_cast<i32>(decode_latch_.rs1_val) + d.imm);
             if (mem_.dport().can_issue()) {
                 // Convert f32 to u32 for transmission
                 u32 wdata;

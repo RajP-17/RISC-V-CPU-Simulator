@@ -1,6 +1,8 @@
 #include "loader.hpp"
 #include <random>
 #include <cstring>
+#include <iostream>
+#include <iomanip>
 
 namespace loader {
 
@@ -15,7 +17,7 @@ u32 encode_i_type(u8 opcode, u8 rd, u8 funct3, u8 rs1, i32 imm) {
 
 u32 encode_s_type(u8 opcode, u8 funct3, u8 rs1, u8 rs2, i32 imm) {
     u32 imm_low = (static_cast<u32>(imm) & 0x1F) << 7;
-    u32 imm_high = (static_cast<u32>(imm) & 0xFE0) << 20;
+    u32 imm_high = ((static_cast<u32>(imm) >> 5) & 0x7F) << 25;
     return opcode | imm_low | (funct3 << 12) | (rs1 << 15) | (rs2 << 20) | imm_high;
 }
 
@@ -54,8 +56,11 @@ void load_program_vadd(Memory& mem, const MemMap& map) {
 
     // Initialize i = 0
     program.push_back(encode_i_type(0x13, 10, 0x0, 0, 0));   // mv a0, zero (a0 = i)
-    program.push_back(encode_s_type(0x23, 0x2, 8, 10, -12)); // sw a0, -12(s0)
-    program.push_back(encode_s_type(0x23, 0x2, 8, 10, -16)); // sw a0, -16(s0)
+    u32 sw1 = encode_s_type(0x23, 0x2, 8, 10, -12); // sw a0, -12(s0)
+    u32 sw2 = encode_s_type(0x23, 0x2, 8, 10, -16); // sw a0, -16(s0)
+    std::cout << "Debug: SW encoding: sw1=" << std::hex << sw1 << " sw2=" << sw2 << std::dec << "\n";
+    program.push_back(sw1);
+    program.push_back(sw2);
 
     // Loop start (j .LBB0_1)
     program.push_back(encode_j_type(0x6F, 0, 4));  // j .LBB0_1

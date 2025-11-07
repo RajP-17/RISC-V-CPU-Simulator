@@ -2,6 +2,7 @@
 #include <cstring>
 #include <cassert>
 #include <iostream>
+#include <iomanip>
 
 // ========== DataRamPort Implementation ==========
 
