@@ -59,12 +59,14 @@ void load_program_vadd(Memory& mem, const MemMap& map) {
     program.push_back(encode_s_type(0x23, 0x2, 8, 10, -16)); // sw a0, -16(s0) [i=0]
 
     // Loop start (j .LBB0_1)
+    u32 loop_check_start = program.size();  // Mark start of .LBB0_1
     program.push_back(encode_j_type(0x6F, 0, 4));  // j .LBB0_1
 
     // .LBB0_1: Loop condition check
     program.push_back(encode_i_type(0x03, 10, 0x2, 8, -16)); // lw a0, -16(s0)
     program.push_back(encode_i_type(0x13, 11, 0x0, 0, 255)); // addi a1, zero, 255
-    program.push_back(encode_b_type(0x63, 0x4, 11, 10, 80));  // blt a1, a0, .LBB0_4
+    u32 blt_pos = program.size();
+    program.push_back(0);  // Placeholder for blt - will fix later
     program.push_back(encode_j_type(0x6F, 0, 4));             // j .LBB0_2
 
     // .LBB0_2: Loop body
@@ -103,17 +105,26 @@ void load_program_vadd(Memory& mem, const MemMap& map) {
     program.push_back(encode_j_type(0x6F, 0, 4)); // j .LBB0_3
 
     // .LBB0_3: Increment i
+    u32 increment_start = program.size();
     program.push_back(encode_i_type(0x03, 10, 0x2, 8, -16)); // lw a0, -16(s0)
     program.push_back(encode_i_type(0x13, 10, 0x0, 10, 1)); // addi a0, a0, 1
     program.push_back(encode_s_type(0x23, 0x2, 8, 10, -16)); // sw a0, -16(s0)
-    program.push_back(encode_j_type(0x6F, 0, -((30 * 4)))); // j .LBB0_1 (back to loop start)
+    // Calculate jump offset back to .LBB0_1
+    u32 jump_from = program.size();  // Position of the jump instruction
+    i32 jump_offset = (loop_check_start + 1 - jump_from) * 4;  // +1 because .LBB0_1 starts after the j instruction
+    program.push_back(encode_j_type(0x6F, 0, jump_offset)); // j .LBB0_1 (back to loop start)
 
     // .LBB0_4: Epilogue
+    u32 epilogue_start = program.size();
     program.push_back(encode_i_type(0x03, 10, 0x2, 8, -12)); // lw a0, -12(s0)
     program.push_back(encode_i_type(0x03, 8, 0x2, 2, 8));    // lw s0, 8(sp)
     program.push_back(encode_i_type(0x03, 1, 0x2, 2, 12));   // lw ra, 12(sp)
     program.push_back(encode_i_type(0x13, 2, 0x0, 2, 16));   // addi sp, sp, 16
     program.push_back(0x00008067);  // ret (jalr x0, 0(x1))
+
+    // Now fix the BLT branch offset to jump to epilogue
+    i32 blt_offset = (epilogue_start - blt_pos) * 4;
+    program[blt_pos] = encode_b_type(0x63, 0x4, 11, 10, blt_offset);  // blt a1, a0, .LBB0_4
 
     // Write program to memory
     for (size_t i = 0; i < program.size(); ++i) {
@@ -135,12 +146,16 @@ void load_program_vsub(Memory& mem, const MemMap& map) {
     program.push_back(encode_i_type(0x13, 10, 0x0, 0, 0));
     program.push_back(encode_s_type(0x23, 0x2, 8, 10, -12));
     program.push_back(encode_s_type(0x23, 0x2, 8, 10, -16));
+
+    // Loop start
+    u32 loop_check_start = program.size();
     program.push_back(encode_j_type(0x6F, 0, 4));
 
     // Loop (same as vadd but FSUB instead of FADD)
     program.push_back(encode_i_type(0x03, 10, 0x2, 8, -16));
     program.push_back(encode_i_type(0x13, 11, 0x0, 0, 255));
-    program.push_back(encode_b_type(0x63, 0x4, 11, 10, 80));
+    u32 blt_pos = program.size();
+    program.push_back(0);  // Placeholder for blt
     program.push_back(encode_j_type(0x6F, 0, 4));
 
     // Load A[i] and B[i], compute D[i] = A[i] - B[i]
