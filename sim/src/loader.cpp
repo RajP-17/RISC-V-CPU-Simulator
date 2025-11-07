@@ -34,10 +34,12 @@ u32 encode_u_type(u8 opcode, u8 rd, u32 imm) {
 }
 
 u32 encode_j_type(u8 opcode, u8 rd, i32 imm) {
-    u32 imm_19_12 = ((static_cast<u32>(imm) >> 12) & 0xFF) << 12;
-    u32 imm11 = ((static_cast<u32>(imm) >> 11) & 0x1) << 20;
-    u32 imm_10_1 = ((static_cast<u32>(imm) >> 1) & 0x3FF) << 21;
-    u32 imm20 = ((static_cast<u32>(imm) >> 20) & 0x1) << 31;
+    // J-type immediate encoding: imm[20|10:1|11|19:12]
+    // Instruction bits: [31]=imm[20], [30:21]=imm[10:1], [20]=imm[11], [19:12]=imm[19:12]
+    u32 imm_19_12 = ((static_cast<u32>(imm) >> 12) & 0xFF) << 12;  // bits [19:12]
+    u32 imm11 = ((static_cast<u32>(imm) >> 11) & 0x1) << 20;        // bit [20]
+    u32 imm_10_1 = ((static_cast<u32>(imm) >> 1) & 0x3FF) << 21;    // bits [30:21]
+    u32 imm20 = ((static_cast<u32>(imm) >> 20) & 0x1) << 31;        // bit [31]
     return opcode | (rd << 7) | imm_19_12 | imm11 | imm_10_1 | imm20;
 }
 
@@ -111,7 +113,11 @@ void load_program_vadd(Memory& mem, const MemMap& map) {
     program.push_back(encode_s_type(0x23, 0x2, 8, 10, -16)); // sw a0, -16(s0)
     // Calculate jump offset back to .LBB0_1
     u32 jump_from = program.size();  // Position of the jump instruction
-    i32 jump_offset = (loop_check_start + 1 - jump_from) * 4;  // +1 because .LBB0_1 starts after the j instruction
+    u32 jump_target = loop_check_start + 1;  // Target is .LBB0_1 (after the first j instruction)
+    i32 jump_offset = (static_cast<i32>(jump_target) - static_cast<i32>(jump_from)) * 4;
+    std::cerr << "VADD: jump_from=" << jump_from << " (PC=0x" << std::hex << (jump_from*4) << ") "
+              << "jump_target=" << std::dec << jump_target << " (PC=0x" << std::hex << (jump_target*4) << ") "
+              << "offset=" << std::dec << jump_offset << "\n";
     program.push_back(encode_j_type(0x6F, 0, jump_offset)); // j .LBB0_1 (back to loop start)
 
     // .LBB0_4: Epilogue
@@ -196,14 +202,21 @@ void load_program_vsub(Memory& mem, const MemMap& map) {
     program.push_back(encode_i_type(0x03, 10, 0x2, 8, -16));
     program.push_back(encode_i_type(0x13, 10, 0x0, 10, 1));
     program.push_back(encode_s_type(0x23, 0x2, 8, 10, -16));
-    program.push_back(encode_j_type(0x6F, 0, -((30 * 4))));
+    u32 jump_from = program.size();
+    i32 jump_offset = (loop_check_start + 1 - jump_from) * 4;
+    program.push_back(encode_j_type(0x6F, 0, jump_offset));
 
     // Epilogue
+    u32 epilogue_start = program.size();
     program.push_back(encode_i_type(0x03, 10, 0x2, 8, -12));
     program.push_back(encode_i_type(0x03, 8, 0x2, 2, 8));
     program.push_back(encode_i_type(0x03, 1, 0x2, 2, 12));
     program.push_back(encode_i_type(0x13, 2, 0x0, 2, 16));
     program.push_back(0x00008067);
+
+    // Fix BLT branch offset
+    i32 blt_offset = (epilogue_start - blt_pos) * 4;
+    program[blt_pos] = encode_b_type(0x63, 0x4, 11, 10, blt_offset);
 
     for (size_t i = 0; i < program.size(); ++i) {
         mem.write_u32(addr + i * 4, program[i]);

@@ -425,11 +425,17 @@ void Cpu::stage_execute() {
             break;
 
         // Jumps
-        case Decoded::Kind::JAL:
+        case Decoded::Kind::JAL: {
             result = decode_latch_.pc + 4;  // Return address
-            handle_branch(isa::calc_jump_target(decode_latch_.pc, d.imm));
+            u32 target = isa::calc_jump_target(decode_latch_.pc, d.imm);
+            if (stats_.retired < 30) {
+                std::cerr << "JAL at PC=0x" << std::hex << decode_latch_.pc << " imm=" << std::dec << d.imm
+                          << " target=0x" << std::hex << target << std::dec << "\n";
+            }
+            handle_branch(target);
             countdown = timing::kIExecuteCycles - 1;
             break;
+        }
         case Decoded::Kind::JALR:
             result = decode_latch_.pc + 4;  // Return address
             handle_branch(isa::calc_jalr_target(decode_latch_.rs1_val, d.imm));
@@ -495,7 +501,12 @@ void Cpu::stage_writeback() {
     stats_.retired++;
 
     if (stats_.retired < 50) {
-        std::cerr << "Retired #" << stats_.retired << " at PC=" << std::hex << execute_latch_.pc << std::dec << "\n";
+        std::cerr << "Retired #" << stats_.retired << " at PC=" << std::hex << execute_latch_.pc;
+        if (execute_latch_.decoded.kind == Decoded::Kind::JAL || execute_latch_.decoded.kind == Decoded::Kind::BEQ ||
+            execute_latch_.decoded.kind == Decoded::Kind::BNE || execute_latch_.decoded.kind == Decoded::Kind::BLT) {
+            std::cerr << " (branch/jump to PC=" << next_pc_ << ")";
+        }
+        std::cerr << std::dec << "\n";
     }
 
     execute_latch_.valid = false;
