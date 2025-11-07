@@ -1,0 +1,117 @@
+#include <string>
+#include <bitset>
+#include <cstdint>
+#include <iostream>
+using namespace std;
+
+struct ControlSignals {
+    int RegDst = 0;     // Select which register field is destination (mainly for R-type). 
+    int Jump = 0;       // Controls the PC MUX to choose a jump target instead of PC+4.
+    int Branch = 0;     // Enables branch comparison logic for instructions like BEQ.
+    int MemRead = 0;    // Enables a read from data memory (used by LW).
+    int MemtoReg = 0;   // Selects whether writeback comes from ALU result or memory (LW uses memory).
+    int ALUOp = 0;      // Tells the ALU what operation type to perform (determined by instruction type).
+    int MemWrite = 0;   // Enables write to data memory (used by SW).
+    int ALUSrc = 0;     // Chooses the second ALU input: register (0) or immediate constant (1).
+    int RegWrite = 0;   // Enables writing into the register file.
+    int Sel[6] = {0, 0, 0, 0, 0, 0}; // Extra multiplexer select bits.
+};
+
+// Print all control signals
+void printSignals(const ControlSignals &c) {
+    cout << "Reg Dest:" << c.RegDst << endl;
+    cout << "Jump:" << c.Jump << endl;
+    cout << "Branch:" << c.Branch << endl;
+    cout << "Memory Read:" << c.MemRead << endl;
+    cout << "Memory to register:" << c.MemtoReg << endl;
+    cout << "Alu op:" << c.ALUOp << endl;
+    cout << "Memory Write:" << c.MemWrite << endl;
+    cout << "Alu src:" << c.ALUSrc << endl;
+    cout << "Reg Write:" << c.RegWrite << endl;
+    for (int i = 0; i < 6; i++)
+        cout << "Sel " << i << ":" << c.Sel[i] << endl;
+}
+
+int main() {
+    string input;
+
+    cout << "Enter 32-bit instruction (binary only): ";
+    cin >> input;
+
+    // input size validation
+    if (input.size() != 32) {
+        cout << "Invalid input length! Must be 32 bits.\n";
+        return 0;
+    }
+
+    // Convert binary string → 32-bit integer
+    bitset<32> instr(input);
+    uint32_t raw = instr.to_ulong();
+
+    /*
+     Extract standard RISC-V instruction fields.
+    */
+    uint32_t opcode = raw & 0x7F;          // bits [6:0]
+    uint32_t rd     = (raw >> 7)  & 0x1F;  // bits [11:7]
+    uint32_t funct3 = (raw >> 12) & 0x7;   // bits [14:12]
+    uint32_t rs1    = (raw >> 15) & 0x1F;  // bits [19:15]
+    uint32_t rs2    = (raw >> 20) & 0x1F;  // bits [24:20]
+    uint32_t funct7 = (raw >> 25) & 0x7F;  // bits [31:25]
+
+    ControlSignals cs; // Struct storing control signal states
+
+    // Main opcode-based decoder
+    if (opcode == 0x33) { // R-type (ADD, SUB, AND, OR, etc.)
+        cout << "R type instruction" << endl;
+        cout << "ADD RS R1 R2" << endl;
+        cs.RegDst = 1;     // destination register comes from rd field
+        cs.RegWrite = 1;   // result should be written into register file
+        cs.ALUOp = 1;      // select ALU operation logic for R-type
+    }
+    else if (opcode == 0x13) { // I-type arithmetic (ADDI, etc.)
+        cout << "I type instruction" << endl;
+        cout << "ADDI R1 R2 Imm" << endl;
+        cs.ALUSrc = 1;     // ALU uses immediate as second operand
+        cs.RegWrite = 1;   // result written to register
+        cs.ALUOp = 2;      // indicates I-type ALU operation
+    }
+    else if (opcode == 0x03) { // Load instructions (LW, LH, LB)
+        cout << "Load instruction" << endl;
+        cout << "LW R1 Imm(R2)" << endl;
+        cs.ALUSrc = 1;     // address = rs1 + offset
+        cs.MemRead = 1;    // read data memory
+        cs.MemtoReg = 1;   // writeback comes from memory instead of ALU
+        cs.RegWrite = 1;   // value loaded goes into register file
+    }
+    else if (opcode == 0x23) { // Store instructions (SW, SH, SB)
+        cout << "Store instruction" << endl;
+        cout << "SW R1 Imm(R2)" << endl;
+        cs.ALUSrc = 1;     // compute address using immediate
+        cs.MemWrite = 1;   // enable write to data memory
+    }
+    else if (opcode == 0x63) { // Branch instructions (BEQ, BNE, etc.)
+        cout << "Branch instruction" << endl;
+        cout << "BEQ R1 R2 offset" << endl;
+        cs.Branch = 1;     // enables branch compare
+        cs.ALUOp = 1;      // ALU performs subtraction for equality check
+    }
+    else if (opcode == 0x6F || opcode == 0x67) { // JAL, JALR (unconditional control transfers)
+        cout << "Jump instruction" << endl;
+        cs.Jump = 1;       // PC is updated to jump target rather than sequential PC+4
+        cs.RegWrite = 1;   // return address (PC+4) is written to register x1 (or rd)
+    }
+    else if (opcode == 0x17 || opcode == 0x37) { // AUIPC / LUI (U-type immediate instructions)
+        cout << "U type instruction" << endl;
+        cs.ALUSrc = 1;     // uses large immediate constant
+        cs.RegWrite = 1;   // writes the constructed constant into register
+    }
+    else {
+        cout << "Unknown or unsupported instruction" << endl;
+    }
+
+    // Output final control signal state
+    printSignals(cs);
+    cout << "----------------------------------------" << endl;
+
+    return 0;
+}
