@@ -1,6 +1,7 @@
 #include "memory.hpp"
 #include <cstring>
 #include <cassert>
+#include <iostream>
 
 // ========== DataRamPort Implementation ==========
 
@@ -63,7 +64,10 @@ u32 DataRamPort::read_word(u32 addr) const {
 
 void DataRamPort::write_word(u32 addr, u32 data) {
     assert((addr & 0x3) == 0 && "Unaligned memory access!");
-    assert(addr + 3 < mem_.size() && "Memory access out of bounds!");
+    if (addr + 3 >= mem_.size()) {
+        std::cerr << "Memory write out of bounds! addr=" << std::hex << addr << " mem_size=" << mem_.size() << std::dec << "\n";
+        assert(false && "Memory access out of bounds!");
+    }
 
     std::memcpy(&mem_[addr], &data, sizeof(u32));
 }
