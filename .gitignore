@@ -37,8 +37,16 @@ tests.exe
 *.pdb
 *.ilk
 
-gitignore
+.gitignore
 Agent_Task_Spec_CPP.md
 CLAUDE.md
 ugo.txt
 ugo.txt
+
+# Ignore all markdown files
+*.md
+
+# But keep these important ones (negation pattern)
+!Assignment_4.md
+!ARCHITECTURE.md
+!README.md
