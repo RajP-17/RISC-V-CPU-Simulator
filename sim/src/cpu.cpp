@@ -282,11 +282,6 @@ void Cpu::stage_execute() {
         // Floating-point ALU
         case Decoded::Kind::FADD_S:
             fresult = isa::exec_fadd_s(decode_latch_.frs1_val, decode_latch_.frs2_val);
-            if (stats_.retired < 35) {
-                std::cerr << "  FADD.S: f" << static_cast<int>(d.rd) << " = f" << static_cast<int>(d.rs1)
-                          << "(" << decode_latch_.frs1_val << ") + f" << static_cast<int>(d.rs2)
-                          << "(" << decode_latch_.frs2_val << ") = " << fresult << "\n";
-            }
             countdown = timing::kFExecuteCycles - 1;
             break;
         case Decoded::Kind::FSUB_S:
