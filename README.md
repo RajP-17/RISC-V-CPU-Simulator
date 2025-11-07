@@ -153,8 +153,3 @@ Example output:
 - Verify memory map addresses match your program's expectations
 - Use `--seed` to get reproducible random data for debugging
 
-## References
-
-- [Assignment_4.md](Assignment_4.md): Full assignment specification
-- [CLAUDE.md](CLAUDE.md): Architecture overview for AI assistants
-- [Agent_Task_Spec_CPP.md](Agent_Task_Spec_CPP.md): Detailed implementation spec
