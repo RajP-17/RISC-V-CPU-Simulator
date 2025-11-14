@@ -12,6 +12,7 @@ add_library(simcore
     sim/src/cpu.cpp
     sim/src/loader.cpp
     sim/src/checks.cpp
+    sim/src/bus.cpp
 )
 
 target_include_directories(simcore PUBLIC sim/include)
@@ -22,8 +23,18 @@ add_executable(single sim/src/main_single.cpp)
 target_link_libraries(single PRIVATE simcore)
 target_compile_options(single PRIVATE -Wall -Wextra -Wpedantic)
 
+# Part 2: Dual CPU executable (concurrent with bus arbiter - has issues)
+add_executable(dual sim/src/main_dual.cpp)
+target_link_libraries(dual PRIVATE simcore)
+target_compile_options(dual PRIVATE -Wall -Wextra -Wpedantic)
+
+# Part 2: Simplified dual CPU (sequential execution)
+add_executable(dual_simple sim/src/main_dual_simple.cpp)
+target_link_libraries(dual_simple PRIVATE simcore)
+target_compile_options(dual_simple PRIVATE -Wall -Wextra -Wpedantic)
+
 # Set output directory
-set_target_properties(single PROPERTIES
+set_target_properties(single dual dual_simple PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
 
@@ -31,7 +42,11 @@ set_target_properties(single PROPERTIES
 if(MSVC)
     target_compile_options(simcore PRIVATE /W4)
     target_compile_options(single PRIVATE /W4)
+    target_compile_options(dual PRIVATE /W4)
+    target_compile_options(dual_simple PRIVATE /W4)
 else()
     target_compile_options(simcore PRIVATE -O2)
     target_compile_options(single PRIVATE -O2)
+    target_compile_options(dual PRIVATE -O2)
+    target_compile_options(dual_simple PRIVATE -O2)
 endif()

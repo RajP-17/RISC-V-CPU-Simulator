@@ -56,8 +56,9 @@ void load_program_vadd(Memory& mem, const MemMap& map) {
     program.push_back(encode_s_type(0x23, 0x2, 2, 8, 8));    // sw s0, 8(sp)
     program.push_back(encode_i_type(0x13, 8, 0x0, 2, 16));   // addi s0, sp, 16
 
-    // Initialize i = 0
-    program.push_back(encode_i_type(0x13, 10, 0x0, 0, 0));   // addi a0, x0, 0
+    // Initialize return value and loop counter i = 0
+    program.push_back(encode_i_type(0x13, 10, 0x0, 0, 0));   // addi a0, x0, 0  (mv a0, zero)
+    program.push_back(encode_s_type(0x23, 0x2, 8, 10, -12)); // sw a0, -12(s0) [return value = 0]
     program.push_back(encode_s_type(0x23, 0x2, 8, 10, -16)); // sw a0, -16(s0) [i=0]
 
     // Loop start (j .LBB0_1)
@@ -142,80 +143,86 @@ void load_program_vsub(Memory& mem, const MemMap& map) {
     u32 addr = 0x100;
     std::vector<u32> program;
 
-    // Prologue (same as vadd)
-    program.push_back(encode_i_type(0x13, 2, 0x0, 2, -16));
-    program.push_back(encode_s_type(0x23, 0x2, 2, 1, 12));
-    program.push_back(encode_s_type(0x23, 0x2, 2, 8, 8));
-    program.push_back(encode_i_type(0x13, 8, 0x0, 2, 16));
-    program.push_back(encode_i_type(0x13, 10, 0x0, 0, 0));
-    program.push_back(encode_s_type(0x23, 0x2, 8, 10, -12));
-    program.push_back(encode_s_type(0x23, 0x2, 8, 10, -16));
+    // Prologue - EXACTLY like vadd
+    program.push_back(encode_i_type(0x13, 2, 0x0, 2, -16));  // addi sp, sp, -16
+    program.push_back(encode_s_type(0x23, 0x2, 2, 1, 12));   // sw ra, 12(sp)
+    program.push_back(encode_s_type(0x23, 0x2, 2, 8, 8));    // sw s0, 8(sp)
+    program.push_back(encode_i_type(0x13, 8, 0x0, 2, 16));   // addi s0, sp, 16
 
-    // Loop start
-    u32 loop_check_start = program.size();
-    program.push_back(encode_j_type(0x6F, 0, 4));
+    // Initialize return value and loop counter i = 0
+    program.push_back(encode_i_type(0x13, 10, 0x0, 0, 0));   // addi a0, x0, 0  (mv a0, zero)
+    program.push_back(encode_s_type(0x23, 0x2, 8, 10, -12)); // sw a0, -12(s0) [return value = 0]
+    program.push_back(encode_s_type(0x23, 0x2, 8, 10, -16)); // sw a0, -16(s0) [i=0]
 
-    // Loop (same as vadd but FSUB instead of FADD)
-    program.push_back(encode_i_type(0x03, 10, 0x2, 8, -16));
-    program.push_back(encode_i_type(0x13, 11, 0x0, 0, 255));
+    // Loop start (j .LBB0_1)
+    u32 loop_check_start = program.size();  // Mark start of .LBB0_1
+    program.push_back(encode_j_type(0x6F, 0, 4));  // j .LBB0_1
+
+    // .LBB0_1: Loop condition check
+    program.push_back(encode_i_type(0x03, 10, 0x2, 8, -16)); // lw a0, -16(s0)
+    program.push_back(encode_i_type(0x13, 11, 0x0, 0, 255)); // addi a1, zero, 255
     u32 blt_pos = program.size();
-    program.push_back(0);  // Placeholder for blt
-    program.push_back(encode_j_type(0x6F, 0, 4));
+    program.push_back(0);  // Placeholder for blt - will fix later
+    program.push_back(encode_j_type(0x6F, 0, 4));             // j .LBB0_2
 
-    // Load A[i] and B[i], compute D[i] = A[i] - B[i]
+    // .LBB0_2: Loop body
     // Load A[i] - properly handle %hi/%lo split
     u32 A_hi = map.A_base & 0xFFFFF000;
     i32 A_lo = static_cast<i32>(map.A_base & 0xFFF);
-    if (A_lo & 0x800) A_hi += 0x1000;
-    program.push_back(encode_u_type(0x37, 10, A_hi));
-    program.push_back(encode_i_type(0x13, 10, 0x0, 10, A_lo));
-    program.push_back(encode_i_type(0x03, 11, 0x2, 8, -16));
-    program.push_back(encode_i_type(0x13, 11, 0x1, 11, 2));
-    program.push_back(encode_r_type(0x33, 10, 0x0, 10, 11, 0x00));
-    program.push_back(encode_i_type(0x07, 0, 0x2, 10, 0));
+    if (A_lo & 0x800) A_hi += 0x1000;  // Adjust for sign extension
+    program.push_back(encode_u_type(0x37, 10, A_hi)); // lui a0, %hi(A_base)
+    program.push_back(encode_i_type(0x13, 10, 0x0, 10, A_lo)); // addi a0, a0, %lo(A_base)
+    program.push_back(encode_i_type(0x03, 11, 0x2, 8, -16)); // lw a1, -16(s0) [i]
+    program.push_back(encode_i_type(0x13, 11, 0x1, 11, 2)); // slli a1, a1, 2
+    program.push_back(encode_r_type(0x33, 10, 0x0, 10, 11, 0x00)); // add a0, a0, a1
+    program.push_back(encode_i_type(0x07, 0, 0x2, 10, 0)); // flw ft0, 0(a0)
 
     // Load B[i] - properly handle %hi/%lo split
     u32 B_hi = map.B_base & 0xFFFFF000;
     i32 B_lo = static_cast<i32>(map.B_base & 0xFFF);
-    if (B_lo & 0x800) B_hi += 0x1000;
-    program.push_back(encode_u_type(0x37, 10, B_hi));
-    program.push_back(encode_i_type(0x13, 10, 0x0, 10, B_lo));
-    program.push_back(encode_r_type(0x33, 10, 0x0, 10, 11, 0x00));
-    program.push_back(encode_i_type(0x07, 1, 0x2, 10, 0));
+    if (B_lo & 0x800) B_hi += 0x1000;  // Adjust for sign extension
+    program.push_back(encode_u_type(0x37, 10, B_hi)); // lui a0, %hi(B_base)
+    program.push_back(encode_i_type(0x13, 10, 0x0, 10, B_lo)); // addi a0, a0, %lo(B_base)
+    program.push_back(encode_r_type(0x33, 10, 0x0, 10, 11, 0x00)); // add a0, a0, a1
+    program.push_back(encode_i_type(0x07, 1, 0x2, 10, 0)); // flw ft1, 0(a0)
 
-    // FSUB instead of FADD
+    // D[i] = A[i] - B[i] (FSUB instead of FADD)
     program.push_back(encode_r_type(0x53, 0, 0x0, 0, 1, 0x04)); // fsub.s ft0, ft0, ft1
 
     // Store D[i] - properly handle %hi/%lo split
     u32 D_hi = map.D_base & 0xFFFFF000;
     i32 D_lo = static_cast<i32>(map.D_base & 0xFFF);
-    if (D_lo & 0x800) D_hi += 0x1000;
-    program.push_back(encode_u_type(0x37, 10, D_hi));
-    program.push_back(encode_i_type(0x13, 10, 0x0, 10, D_lo));
-    program.push_back(encode_r_type(0x33, 10, 0x0, 10, 11, 0x00));
-    program.push_back(encode_s_type(0x27, 0x2, 10, 0, 0));
-    program.push_back(encode_j_type(0x6F, 0, 4));
+    if (D_lo & 0x800) D_hi += 0x1000;  // Adjust for sign extension
+    program.push_back(encode_u_type(0x37, 10, D_hi)); // lui a0, %hi(D_base)
+    program.push_back(encode_i_type(0x13, 10, 0x0, 10, D_lo)); // addi a0, a0, %lo(D_base)
+    program.push_back(encode_r_type(0x33, 10, 0x0, 10, 11, 0x00)); // add a0, a0, a1
+    program.push_back(encode_s_type(0x27, 0x2, 10, 0, 0)); // fsw ft0, 0(a0)
 
-    // Increment and loop back
-    program.push_back(encode_i_type(0x03, 10, 0x2, 8, -16));
-    program.push_back(encode_i_type(0x13, 10, 0x0, 10, 1));
-    program.push_back(encode_s_type(0x23, 0x2, 8, 10, -16));
-    u32 jump_from = program.size();
-    i32 jump_offset = (loop_check_start + 1 - jump_from) * 4;
-    program.push_back(encode_j_type(0x6F, 0, jump_offset));
+    program.push_back(encode_j_type(0x6F, 0, 4)); // j .LBB0_3
 
-    // Epilogue
+    // .LBB0_3: Increment i
+    program.push_back(encode_i_type(0x03, 10, 0x2, 8, -16)); // lw a0, -16(s0)
+    program.push_back(encode_i_type(0x13, 10, 0x0, 10, 1)); // addi a0, a0, 1
+    program.push_back(encode_s_type(0x23, 0x2, 8, 10, -16)); // sw a0, -16(s0)
+    // Calculate jump offset back to .LBB0_1
+    u32 jump_from = program.size();  // Position of the jump instruction
+    u32 jump_target = loop_check_start + 1;  // Target is .LBB0_1 (after the first j instruction)
+    i32 jump_offset = (static_cast<i32>(jump_target) - static_cast<i32>(jump_from)) * 4;
+    program.push_back(encode_j_type(0x6F, 0, jump_offset)); // j .LBB0_1 (back to loop start)
+
+    // .LBB0_4: Epilogue
     u32 epilogue_start = program.size();
-    program.push_back(encode_i_type(0x03, 10, 0x2, 8, -12));
-    program.push_back(encode_i_type(0x03, 8, 0x2, 2, 8));
-    program.push_back(encode_i_type(0x03, 1, 0x2, 2, 12));
-    program.push_back(encode_i_type(0x13, 2, 0x0, 2, 16));
-    program.push_back(0x00008067);
+    program.push_back(encode_i_type(0x03, 10, 0x2, 8, -12)); // lw a0, -12(s0)
+    program.push_back(encode_i_type(0x03, 8, 0x2, 2, 8));    // lw s0, 8(sp)
+    program.push_back(encode_i_type(0x03, 1, 0x2, 2, 12));   // lw ra, 12(sp)
+    program.push_back(encode_i_type(0x13, 2, 0x0, 2, 16));   // addi sp, sp, 16
+    program.push_back(0x00008067);  // ret (jalr x0, 0(x1))
 
-    // Fix BLT branch offset
+    // Now fix the BLT branch offset to jump to epilogue
     i32 blt_offset = (epilogue_start - blt_pos) * 4;
-    program[blt_pos] = encode_b_type(0x63, 0x4, 11, 10, blt_offset);
+    program[blt_pos] = encode_b_type(0x63, 0x4, 11, 10, blt_offset);  // blt a1, a0, .LBB0_4
 
+    // Write program to memory
     for (size_t i = 0; i < program.size(); ++i) {
         mem.write_u32(addr + i * 4, program[i]);
     }

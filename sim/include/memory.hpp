@@ -57,12 +57,13 @@ private:
 class Memory {
 public:
     explicit Memory(size_t size = 64 * 1024);  // Default 64KB
+    virtual ~Memory() = default;  // Make polymorphic
 
     // Instruction fetch (no latency, separate port)
-    u32 ifetch(u32 addr) const;
+    virtual u32 ifetch(u32 addr) const;
 
     // Data port access
-    DataRamPort& dport();
+    virtual DataRamPort& dport();
 
     // Direct access for initialization (bypasses timing)
     u8& operator[](u32 addr);
@@ -74,9 +75,9 @@ public:
     void write_f32(u32 addr, f32 value);
     f32 read_f32(u32 addr) const;
 
-    size_t size() const { return data_.size(); }
+    virtual size_t size() const { return data_.size(); }
 
-private:
+protected:
     std::vector<u8> data_;
     DataRamPort dport_;
 };
