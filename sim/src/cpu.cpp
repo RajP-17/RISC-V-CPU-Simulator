@@ -65,9 +65,9 @@ void Cpu::tick() {
     flush_decode_ = false;
 
     stats_.ticks++;
-    if (stats_.ticks % timing::kTicksPerCycle == 0) {
-        stats_.cycles++;
-    }
+    // Increment cycle counter every tick (each tick is part of a cycle)
+    // The actual CPI will be determined by how many ticks it takes to retire instructions
+    stats_.cycles = stats_.ticks / timing::kTicksPerCycle;
 }
 
 void Cpu::stage_fetch() {
@@ -160,6 +160,7 @@ void Cpu::stage_execute() {
     if (execute_latch_.valid) {
 
         // Check if execute is still in progress
+        // countdown is in TICKS, not cycles
         if (execute_latch_.execute_countdown > 0) {
             execute_latch_.execute_countdown--;
             if (execute_latch_.execute_countdown > 0) {
@@ -206,95 +207,95 @@ void Cpu::stage_execute() {
         // Integer ALU
         case Decoded::Kind::ADD:
             result = isa::exec_add(decode_latch_.rs1_val, decode_latch_.rs2_val);
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::SUB:
             result = isa::exec_sub(decode_latch_.rs1_val, decode_latch_.rs2_val);
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::ADDI:
             result = isa::exec_add(decode_latch_.rs1_val, static_cast<u32>(d.imm));
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::AND:
             result = isa::exec_and(decode_latch_.rs1_val, decode_latch_.rs2_val);
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::OR:
             result = isa::exec_or(decode_latch_.rs1_val, decode_latch_.rs2_val);
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::XOR:
             result = isa::exec_xor(decode_latch_.rs1_val, decode_latch_.rs2_val);
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::ANDI:
             result = isa::exec_and(decode_latch_.rs1_val, static_cast<u32>(d.imm));
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::ORI:
             result = isa::exec_or(decode_latch_.rs1_val, static_cast<u32>(d.imm));
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::XORI:
             result = isa::exec_xor(decode_latch_.rs1_val, static_cast<u32>(d.imm));
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::SLLI:
             result = isa::exec_sll(decode_latch_.rs1_val, d.imm & 0x1F);
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::SRLI:
             result = isa::exec_srl(decode_latch_.rs1_val, d.imm & 0x1F);
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::SRAI:
             result = isa::exec_sra(static_cast<i32>(decode_latch_.rs1_val), d.imm & 0x1F);
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::SLT:
             result = isa::exec_slt(static_cast<i32>(decode_latch_.rs1_val), static_cast<i32>(decode_latch_.rs2_val));
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::SLTI:
             result = isa::exec_slt(static_cast<i32>(decode_latch_.rs1_val), d.imm);
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::SLTU:
             result = isa::exec_sltu(decode_latch_.rs1_val, decode_latch_.rs2_val);
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::SLTIU:
             result = isa::exec_sltu(decode_latch_.rs1_val, static_cast<u32>(d.imm));
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
 
         // LUI/AUIPC
         case Decoded::Kind::LUI:
             result = static_cast<u32>(d.imm);
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::AUIPC:
             result = decode_latch_.pc + static_cast<u32>(d.imm);
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
 
         // Floating-point ALU
         case Decoded::Kind::FADD_S:
             fresult = isa::exec_fadd_s(decode_latch_.frs1_val, decode_latch_.frs2_val);
-            countdown = timing::kFExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kFExecuteCycles);
             break;
         case Decoded::Kind::FSUB_S:
             fresult = isa::exec_fsub_s(decode_latch_.frs1_val, decode_latch_.frs2_val);
-            countdown = timing::kFExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kFExecuteCycles);
             break;
         case Decoded::Kind::FMUL_S:
             fresult = isa::exec_fmul_s(decode_latch_.frs1_val, decode_latch_.frs2_val);
-            countdown = timing::kFExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kFExecuteCycles);
             break;
         case Decoded::Kind::FDIV_S:
             fresult = isa::exec_fdiv_s(decode_latch_.frs1_val, decode_latch_.frs2_val);
-            countdown = timing::kFExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kFExecuteCycles);
             break;
 
         // Memory operations
@@ -316,7 +317,7 @@ void Cpu::stage_execute() {
                 stall_fetch_ = true;
                 return;
             }
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         }
 
@@ -337,7 +338,7 @@ void Cpu::stage_execute() {
                 stall_fetch_ = true;
                 return;
             }
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         }
 
@@ -362,7 +363,7 @@ void Cpu::stage_execute() {
                 stall_fetch_ = true;
                 return;
             }
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         }
 
@@ -371,37 +372,37 @@ void Cpu::stage_execute() {
             if (isa::eval_beq(decode_latch_.rs1_val, decode_latch_.rs2_val)) {
                 handle_branch(isa::calc_branch_target(decode_latch_.pc, d.imm));
             }
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::BNE:
             if (isa::eval_bne(decode_latch_.rs1_val, decode_latch_.rs2_val)) {
                 handle_branch(isa::calc_branch_target(decode_latch_.pc, d.imm));
             }
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::BLT:
             if (isa::eval_blt(static_cast<i32>(decode_latch_.rs1_val), static_cast<i32>(decode_latch_.rs2_val))) {
                 handle_branch(isa::calc_branch_target(decode_latch_.pc, d.imm));
             }
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::BGE:
             if (isa::eval_bge(static_cast<i32>(decode_latch_.rs1_val), static_cast<i32>(decode_latch_.rs2_val))) {
                 handle_branch(isa::calc_branch_target(decode_latch_.pc, d.imm));
             }
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::BLTU:
             if (isa::eval_bltu(decode_latch_.rs1_val, decode_latch_.rs2_val)) {
                 handle_branch(isa::calc_branch_target(decode_latch_.pc, d.imm));
             }
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         case Decoded::Kind::BGEU:
             if (isa::eval_bgeu(decode_latch_.rs1_val, decode_latch_.rs2_val)) {
                 handle_branch(isa::calc_branch_target(decode_latch_.pc, d.imm));
             }
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
 
         // Jumps
@@ -409,17 +410,17 @@ void Cpu::stage_execute() {
             result = decode_latch_.pc + 4;  // Return address
             u32 target = isa::calc_jump_target(decode_latch_.pc, d.imm);
             handle_branch(target);
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
         }
         case Decoded::Kind::JALR:
             result = decode_latch_.pc + 4;  // Return address
             handle_branch(isa::calc_jalr_target(decode_latch_.rs1_val, d.imm));
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
 
         case Decoded::Kind::NOP:
-            countdown = timing::kIExecuteCycles - 1;
+            countdown = timing::cycles_to_ticks(timing::kIExecuteCycles);
             break;
 
         default:
