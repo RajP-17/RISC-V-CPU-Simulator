@@ -50,6 +50,7 @@ int main(int argc, char** argv) {
 
     // === Run CPU1 (vsub) ===
     std::cout << "Running CPU1 (vsub: D = A - B)...\n";
+    mem.dport().reset();  // Reset memory port state before CPU1
     Cpu cpu1(mem, 1);
     cpu1.reset(0x100);
     Stats stats1 = cpu1.run(0);  // Run until halt

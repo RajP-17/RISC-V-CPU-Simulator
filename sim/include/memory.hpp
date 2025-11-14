@@ -37,6 +37,9 @@ public:
     // Advance time by one tick
     void tick();
 
+    // Reset the port state (for sequential simulations)
+    void reset();
+
 private:
     struct PendingReq {
         MemReq req;

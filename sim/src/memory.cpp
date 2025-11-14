@@ -54,6 +54,13 @@ void DataRamPort::tick() {
     current_tick_++;
 }
 
+void DataRamPort::reset() {
+    current_tick_ = 0;
+    while (!pending_.empty()) {
+        pending_.pop();
+    }
+}
+
 u32 DataRamPort::read_word(u32 addr) const {
     assert((addr & 0x3) == 0 && "Unaligned memory access!");
     if (addr + 3 >= mem_.size()) {
